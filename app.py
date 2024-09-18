@@ -538,3 +538,10 @@ async def delete_post(post_id: str, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=500, detail="Failed to delete the post")
     
 app.include_router(router, prefix="/api/v1/community")
+
+import os
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="info")
