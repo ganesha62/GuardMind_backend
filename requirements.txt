@@ -11,6 +11,7 @@ gunicorn
 python-multipart
 nltk
 keras
+nltk==3.6.3
 tensorflow
 autocorrect
 typing

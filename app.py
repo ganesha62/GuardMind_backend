@@ -31,6 +31,19 @@ logger = logging.getLogger(__name__)
 import nltk
 nltk.download('punkt')
 nltk.download('wordnet')
+
+nltk.data.path.append("/tmp/nltk_data")
+
+def download_nltk_data():
+    try:
+        nltk.data.find('tokenizers/punkt')
+        nltk.data.find('corpora/wordnet')
+    except LookupError:
+        nltk.download('punkt', download_dir="/tmp/nltk_data")
+        nltk.download('wordnet', download_dir="/tmp/nltk_data")
+
+# Call this function at the start of your application
+download_nltk_data()
 app = FastAPI()
 
 # CORS configuration
