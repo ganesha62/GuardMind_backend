@@ -2,7 +2,6 @@
 uvicorn
 pymongo
 python-jose
-bson
 datetime
 passlib
 pydantic
