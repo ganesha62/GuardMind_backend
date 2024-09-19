@@ -20,13 +20,36 @@ from autocorrect import Speller
 from nltk.stem import WordNetLemmatizer
 from keras.models import load_model
 import json
+import logging
 
+# ... other imports ...
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+import nltk
+nltk.download('punkt')
+nltk.download('wordnet')
+
+nltk.data.path.append("/tmp/nltk_data")
+
+def download_nltk_data():
+    try:
+        nltk.data.find('tokenizers/punkt')
+        nltk.data.find('corpora/wordnet')
+    except LookupError:
+        nltk.download('punkt', download_dir="/tmp/nltk_data")
+        nltk.download('wordnet', download_dir="/tmp/nltk_data")
+
+# Call this function at the start of your application
+download_nltk_data()
 app = FastAPI()
 
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://guardmind-backend.onrender.com/", "https://your-frontend-domain.com"],  # Add your frontend URL
+    allow_origins=["http://localhost:5173", "https://guardmind-backend.onrender.com", "https://your-frontend-domain.com"],  # Add your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,7 +73,7 @@ except Exception as e:
     print(e)
 
 # Security
-SECRET_KEY = "34d09f3729e8ec5cff6156656503d8ce3b527dfe4c456a72eef8269873261ffb" # Replace with a real secret key
+SECRET_KEY = os.environ.get("SECRET_KEY") # Replace with a real secret key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -332,49 +355,55 @@ def chat_bow(text):
     # If no specific mental health response is found, fall back to the original chatbot logic
     return "Chatbot response"  # Replace this with your original chatbot logic
 
+
 @app.post("/chat")
 async def chat(request: ChatRequest, current_user: dict = Depends(get_current_user)):
-    is_guest = current_user.get("is_guest", False)
-    
-    if is_guest:
-        user_id = str(current_user["id"])
-        # For guest users, don't store any chat history
+    try:
+        is_guest = current_user.get("is_guest", False)
+        
+        if is_guest:
+            user_id = str(current_user["id"])
+            # For guest users, don't store any chat history
+            try:
+                response = chat_bow(request.message)
+            except Exception as e:
+                logger.error(f"Error generating response: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
+            
+            return {"response": response, "chat_id": None}
+
+        user_id = str(current_user["_id"])
+        # For registered users, continue with the existing logic
+        if request.chat_id:
+            chat = chats_collection.find_one({"_id": ObjectId(request.chat_id), "user_id": user_id})
+            if not chat:
+                raise HTTPException(status_code=404, detail="Chat not found")
+        else:
+            chat = {"user_id": user_id, "messages": [], "created_at": datetime.now()}
+        
+        # Add user message to chat
+        chat["messages"].append({"sender": "user", "text": request.message, "timestamp": datetime.now()})
+        
         try:
             response = chat_bow(request.message)
         except Exception as e:
-            print(f"Error generating response: {str(e)}")
-            raise HTTPException(status_code=500, detail="Error generating response")
+            logger.error(f"Error generating response: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
         
-        return {"response": response, "chat_id": None}
-    user_id = str(current_user["_id"])
-    # For registered users, continue with the existing logic
-    if request.chat_id:
-        chat = chats_collection.find_one({"_id": ObjectId(request.chat_id), "user_id": user_id})
-        if not chat:
-            raise HTTPException(status_code=404, detail="Chat not found")
-    else:
-        chat = {"user_id": user_id, "messages": [], "created_at": datetime.now()}
-    
-    # Add user message to chat
-    chat["messages"].append({"sender": "user", "text": request.message, "timestamp": datetime.now()})
-    
-    try:
-        response = chat_bow(request.message)
+        # Add bot response to chat
+        chat["messages"].append({"sender": "bot", "text": response, "timestamp": datetime.now()})
+        
+        # Save or update chat in database
+        if request.chat_id:
+            chats_collection.update_one({"_id": ObjectId(request.chat_id)}, {"$set": chat})
+        else:
+            result = chats_collection.insert_one(chat)
+            request.chat_id = str(result.inserted_id)
+        
+        return {"response": response, "chat_id": request.chat_id}
     except Exception as e:
-        print(f"Error generating response: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error generating response")
-    
-    # Add bot response to chat
-    chat["messages"].append({"sender": "bot", "text": response, "timestamp": datetime.now()})
-    
-    # Save or update chat in database
-    if request.chat_id:
-        chats_collection.update_one({"_id": ObjectId(request.chat_id)}, {"$set": chat})
-    else:
-        result = chats_collection.insert_one(chat)
-        request.chat_id = str(result.inserted_id)
-    
-    return {"response": response, "chat_id": request.chat_id}
+        logger.error(f"Unexpected error in chat endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 # Modify the get_chat_history endpoint
 @app.get("/chat-history")
