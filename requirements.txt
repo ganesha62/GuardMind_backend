@@ -14,5 +14,4 @@ keras
 tensorflow
 autocorrect
 typing
-pickle
 json
