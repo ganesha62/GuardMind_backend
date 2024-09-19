@@ -1,3 +1,4 @@
+import os
 import random
 import secrets
 from fastapi import FastAPI, Depends, HTTPException, status, APIRouter
@@ -33,7 +34,7 @@ app.add_middleware(
 
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
-uri = "mongodb+srv://mentalhealthuser:mentalhealthuser@cluster0.36ryn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0&tlsAllowInvalidCertificates=true"
+uri = os.environ.get("MONGODB_URI", "mongodb+srv://mentalhealthuser:mentalhealthuser@cluster0.36ryn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0&tlsAllowInvalidCertificates=true")
 # Create a new client and connect to the server
 client = MongoClient(uri, server_api=ServerApi('1'))
 db = client["mental_health_app"]
@@ -49,9 +50,7 @@ except Exception as e:
     print(e)
 
 # Security
-secret_key = secrets.token_hex(32)
-
-SECRET_KEY = secret_key  # Replace with a real secret key
+SECRET_KEY = os.environ.get("SECRET_KEY") # Replace with a real secret key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -538,10 +537,3 @@ async def delete_post(post_id: str, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=500, detail="Failed to delete the post")
     
 app.include_router(router, prefix="/api/v1/community")
-
-import os
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="info")
