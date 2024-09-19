@@ -33,7 +33,7 @@ app.add_middleware(
 
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
-uri = "mongodb+srv://mentalhealthuser:mentalhealthuser@cluster0.36ryn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+uri = "mongodb+srv://mentalhealthuser:mentalhealthuser@cluster0.36ryn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0&tlsAllowInvalidCertificates=true"
 # Create a new client and connect to the server
 client = MongoClient(uri, server_api=ServerApi('1'))
 db = client["mental_health_app"]
