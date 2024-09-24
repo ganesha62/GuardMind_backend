@@ -1,6 +1,4 @@
 import os
-import random
-import secrets
 from fastapi import FastAPI, Depends, HTTPException, status, APIRouter
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, ConfigDict
@@ -12,18 +10,8 @@ from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional, Dict, Any, Annotated, Callable, Union
 from pydantic_core import core_schema
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import numpy as np
-import nltk
-import pickle
-from autocorrect import Speller
-import openai
-from nltk.stem import WordNetLemmatizer
-import json
 from openai import OpenAI
-import logging
 
-# ... other imports ...
 app = FastAPI()
 
 # CORS configuration
@@ -37,8 +25,7 @@ app.add_middleware(
 
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
-uri = os.environ.get("MONGODB_URI", "mongodb+srv://mentalhealthuser:mentalhealthuser@cluster0.36ryn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0&tlsAllowInvalidCertificates=true")
-# Create a new client and connect to the server
+uri = os.environ.get("MONGODB_URI")
 client = MongoClient(uri, server_api=ServerApi('1'))
 db = client["mental_health_app"]
 users_collection = db["users"]
@@ -53,7 +40,7 @@ except Exception as e:
     print(e)
 
 # Security
-SECRET_KEY = os.environ.get("SECRET_KEY") # Replace with a real secret key
+SECRET_KEY = os.environ.get("SECRET_KEY") 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -280,16 +267,12 @@ async def delete_journal_entry(entry_id: str, current_user: dict = Depends(get_c
 
 # Community Router
 router = APIRouter()
-
-
 client = OpenAI(
     api_key = os.environ.get("OPENAI_API_KEY"),
     base_url= os.environ.get("OPENAI_BASE_URL")
 )
-
+#Chatbot Logic
 def ai_response(text):
-
-
     completion = client.chat.completions.create(
         model="pai-001",
         messages=[
@@ -305,7 +288,6 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
     
     if is_guest:
         user_id = str(current_user["id"])
-        # For guest users, don't store any chat history
         try:
             response = ai_response(request.message)
         except Exception as e:
@@ -314,7 +296,6 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
         
         return {"response": response, "chat_id": None}
     user_id = str(current_user["_id"])
-    # For registered users, continue with the existing logic
     if request.chat_id:
         chat = chats_collection.find_one({"_id": ObjectId(request.chat_id), "user_id": user_id})
         if not chat:
@@ -322,7 +303,6 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
     else:
         chat = {"user_id": user_id, "messages": [], "created_at": datetime.now()}
     
-    # Add user message to chat
     chat["messages"].append({"sender": "user", "text": request.message, "timestamp": datetime.now()})
     
     try:
@@ -331,10 +311,8 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
         print(f"Error generating response: {str(e)}")
         raise HTTPException(status_code=500, detail="Error generating response")
     
-    # Add bot response to chat
     chat["messages"].append({"sender": "bot", "text": response, "timestamp": datetime.now()})
-    
-    # Save or update chat in database
+
     if request.chat_id:
         chats_collection.update_one({"_id": ObjectId(request.chat_id)}, {"$set": chat})
     else:
@@ -343,11 +321,11 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
     
     return {"response": response, "chat_id": request.chat_id}
 
-# Modify the get_chat_history endpoint
+
 @app.get("/chat-history")
 async def get_chat_history(current_user: dict = Depends(get_current_user)):
     if current_user.get("is_guest", False):
-        return []  # Return an empty list for guest users
+        return []
     
     user_id = str(current_user["_id"])
     chats = list(chats_collection.find({"user_id": user_id}).sort("created_at", -1))
@@ -435,7 +413,6 @@ async def create_reply(post_id: str, reply: ReplyCreate, current_user: dict = De
         
         updated_post = community_posts_collection.find_one({"_id": ObjectId(post_id)})
         
-        # Create a Post object without the 'replies' field
         post_data = {k: v for k, v in updated_post.items() if k != 'replies'}
         post = Post(
             **post_data,
@@ -443,7 +420,6 @@ async def create_reply(post_id: str, reply: ReplyCreate, current_user: dict = De
             is_owner=str(updated_post["user_id"]) == str(current_user["_id"])
         )
         
-        # Add replies separately
         post.replies = [Reply(**reply) for reply in updated_post.get("replies", [])]
         
         return post
@@ -479,23 +455,19 @@ async def create_reply(post_id: str, reply: ReplyCreate, current_user: dict = De
 
 @app.delete("/community/{post_id}", response_model=dict)
 async def delete_post(post_id: str, current_user: dict = Depends(get_current_user)):
-    # Convert string ID to ObjectId
     try:
         post_object_id = ObjectId(post_id)
     except:
         raise HTTPException(status_code=400, detail="Invalid post ID")
 
-    # Find the post
     post = community_posts_collection.find_one({"_id": post_object_id})
 
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
 
-    # Check if the current user is the owner of the post
     if str(post["user_id"]) != str(current_user["_id"]):
         raise HTTPException(status_code=403, detail="You don't have permission to delete this post")
 
-    # Delete the post
     result = community_posts_collection.delete_one({"_id": post_object_id})
 
     if result.deleted_count == 1:
