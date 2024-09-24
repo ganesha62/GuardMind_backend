@@ -17,33 +17,12 @@ import numpy as np
 import nltk
 import pickle
 from autocorrect import Speller
+import openai
 from nltk.stem import WordNetLemmatizer
-from keras.models import load_model
 import json
 import logging
 
 # ... other imports ...
-
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-
-import nltk
-nltk.download('punkt')
-nltk.download('wordnet')
-
-nltk.data.path.append("/tmp/nltk_data")
-
-def download_nltk_data():
-    try:
-        nltk.data.find('tokenizers/punkt')
-        nltk.data.find('corpora/wordnet')
-    except LookupError:
-        nltk.download('punkt', download_dir="/tmp/nltk_data")
-        nltk.download('wordnet', download_dir="/tmp/nltk_data")
-
-# Call this function at the start of your application
-download_nltk_data()
 app = FastAPI()
 
 # CORS configuration
@@ -302,106 +281,62 @@ async def delete_journal_entry(entry_id: str, current_user: dict = Depends(get_c
 router = APIRouter()
 
 
+def ai_response(text):
+    openai.api_key = os.environ.get("OPENAI_API_KEY")
+    openai.base_url = os.environ.get("OPENAI_BASE_URL")
 
+    completion = openai.chat.completions.create(
+        model="pai-001",
+        messages=[
+            {"role": "user", "content": "You are a mental health professional. You are a helpful therapy assistant bot. Please respond to the following message from the patient. Do not respond more than 2 sentences. The patient says: " + text},
+        ],
+    )
 
-# Load the mental health chatbot model and data
-lemmatizer = WordNetLemmatizer()
-with open("data.pickle", "rb") as f:
-    words, classes, training, output = pickle.load(f)
-model = load_model("chatbot-model.h5")
-
-with open("data/intents.json") as file:
-    intents = json.load(file)
-
-def clean_up_message(message):
-    message_word_list = nltk.word_tokenize(message)
-    message_word_list = [lemmatizer.lemmatize(word.lower()) for word in message_word_list]
-    return message_word_list
-
-def bag_of_words(message, words):
-    message_word = clean_up_message(message)
-    bag = [0] * len(words)
-    for w in message_word:
-        for i, word in enumerate(words):
-            if word == w:
-                bag[i] = 1
-    return np.array(bag)
-
-def predict_class(message, ERROR_THRESHOLD=0.25):
-    bow = bag_of_words(message, words)
-    res = model.predict(np.array([bow]))[0]
-    results = [[i, r] for i, r in enumerate(res) if r > ERROR_THRESHOLD]
-    results.sort(key=lambda x: x[1], reverse=True)
-    return_list = []
-    for r in results:
-        return_list.append((classes[r[0]], r[1]))
-    return return_list
-
-from functools import lru_cache
-
-@lru_cache(maxsize=1000)
-def get_mental_health_response(message, id="000"):
-    spell = Speller()
-    corrected_message = spell(message)
-    results = predict_class(corrected_message)
-    if results:
-        for intent in intents["intents"]:
-            if intent["tag"] == results[0][0]:
-                response = random.choice(intent["responses"])
-                return str(response)
-    return "I'm sorry, I didn't quite understand that. Could you please rephrase your question?"
-
-def chat_bow(text):
-    # First, try to get a mental health-related response
-    mental_health_response = get_mental_health_response(text)
-    
-    # If a specific mental health response is found, return it
-    if mental_health_response != "I'm sorry, I didn't quite understand that. Could you please rephrase your question?":
-        return mental_health_response
-    
-    # If no specific mental health response is found, fall back to the original chatbot logic
-    return "Chatbot response"  # Replace this with your original chatbot logic
-
-
-import asyncio
+    return completion.choices[0].message.content
 
 @app.post("/chat")
 async def chat(request: ChatRequest, current_user: dict = Depends(get_current_user)):
+    is_guest = current_user.get("is_guest", False)
+    
+    if is_guest:
+        user_id = str(current_user["id"])
+        # For guest users, don't store any chat history
+        try:
+            response = ai_response(request.message)
+        except Exception as e:
+            print(f"Error generating response: {str(e)}")
+            raise HTTPException(status_code=500, detail="Error generating response")
+        
+        return {"response": response, "chat_id": None}
+    user_id = str(current_user["_id"])
+    # For registered users, continue with the existing logic
+    if request.chat_id:
+        chat = chats_collection.find_one({"_id": ObjectId(request.chat_id), "user_id": user_id})
+        if not chat:
+            raise HTTPException(status_code=404, detail="Chat not found")
+    else:
+        chat = {"user_id": user_id, "messages": [], "created_at": datetime.now()}
+    
+    # Add user message to chat
+    chat["messages"].append({"sender": "user", "text": request.message, "timestamp": datetime.now()})
+    
     try:
-        is_guest = current_user.get("is_guest", False)
-        user_id = str(current_user["id"]) if is_guest else str(current_user["_id"])
-        
-        # Use asyncio.to_thread to run the CPU-bound task in a separate thread
-        response = await asyncio.to_thread(chat_bow, request.message)
-        
-        if not is_guest:
-            # Handle chat history asynchronously
-            asyncio.create_task(update_chat_history(user_id, request.message, response, request.chat_id))
-        
-        return {"response": response, "chat_id": request.chat_id}
+        response = ai_response(request.message)
     except Exception as e:
-        logger.error(f"Error in chat endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-
-async def update_chat_history(user_id, user_message, bot_response, chat_id):
-    try:
-        if chat_id:
-            chat = await chats_collection.find_one({"_id": ObjectId(chat_id), "user_id": user_id})
-            if not chat:
-                raise HTTPException(status_code=404, detail="Chat not found")
-        else:
-            chat = {"user_id": user_id, "messages": [], "created_at": datetime.now()}
-        
-        chat["messages"].append({"sender": "user", "text": user_message, "timestamp": datetime.now()})
-        chat["messages"].append({"sender": "bot", "text": bot_response, "timestamp": datetime.now()})
-        
-        if chat_id:
-            await chats_collection.update_one({"_id": ObjectId(chat_id)}, {"$set": chat})
-        else:
-            result = await chats_collection.insert_one(chat)
-            chat_id = str(result.inserted_id)
-    except Exception as e:
-        logger.error(f"Error updating chat history: {str(e)}")
+        print(f"Error generating response: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error generating response")
+    
+    # Add bot response to chat
+    chat["messages"].append({"sender": "bot", "text": response, "timestamp": datetime.now()})
+    
+    # Save or update chat in database
+    if request.chat_id:
+        chats_collection.update_one({"_id": ObjectId(request.chat_id)}, {"$set": chat})
+    else:
+        result = chats_collection.insert_one(chat)
+        request.chat_id = str(result.inserted_id)
+    
+    return {"response": response, "chat_id": request.chat_id}
 
 # Modify the get_chat_history endpoint
 @app.get("/chat-history")
