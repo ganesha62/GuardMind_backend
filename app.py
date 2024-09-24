@@ -20,6 +20,7 @@ from autocorrect import Speller
 import openai
 from nltk.stem import WordNetLemmatizer
 import json
+from openai import OpenAI
 import logging
 
 # ... other imports ...
@@ -281,11 +282,15 @@ async def delete_journal_entry(entry_id: str, current_user: dict = Depends(get_c
 router = APIRouter()
 
 
-def ai_response(text):
-    openai.api_key = os.environ.get("OPENAI_API_KEY")
-    openai.base_url = os.environ.get("OPENAI_BASE_URL")
+client = OpenAI(
+    api_key = os.environ.get("OPENAI_API_KEY"),
+    base_url= os.environ.get("OPENAI_BASE_URL")
+)
 
-    completion = openai.chat.completions.create(
+def ai_response(text):
+
+
+    completion = client.chat.completions.create(
         model="pai-001",
         messages=[
             {"role": "user", "content": "You are a mental health professional. You are a helpful therapy assistant bot. Please respond to the following message from the patient. Do not respond more than 2 sentences. The patient says: " + text},
