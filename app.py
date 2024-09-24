@@ -230,6 +230,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return user
 
 # Routes
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+    
 @app.post("/token")
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form_data.username, form_data.password)
