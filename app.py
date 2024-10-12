@@ -276,7 +276,7 @@ def ai_response(text):
     completion = client.chat.completions.create(
         model="pai-001",
         messages=[
-            {"role": "user", "content": "You are a mental health professional. You are a helpful therapy assistant bot. Please respond to the following message from the patient. Do not respond more than 2 sentences. The patient says: " + text},
+            {"role": "user", "content": "You are a mental health professional. You are a helpful therapy assistant bot. Please respond to the following message from the patient. Do not respond more than 2 sentences. And most importantly, just answer the patient's question and dont ask another question as a response to the question. The patient says: " + text},
         ],
     )
 
