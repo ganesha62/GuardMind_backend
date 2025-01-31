@@ -11,7 +11,11 @@ from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional, Dict, Any, Annotated, Callable, Union
 from pydantic_core import core_schema
+import re
 from dotenv import load_dotenv
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+import google.generativeai as genai
 load_dotenv()
 
 app = FastAPI()
@@ -27,8 +31,6 @@ app.add_middleware(
 
 
 #MongoDB
-from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
 uri = os.environ.get("MONGODB_URI")
 client = MongoClient(uri, server_api=ServerApi('1'))
 db = client["mental_health_app"]
@@ -314,7 +316,6 @@ router = APIRouter()
 #     )
 
 #     return completion.choices[0].message.content
-import google.generativeai as genai
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 def ai_response(text):
@@ -641,7 +642,6 @@ Text to analyze: {text}"""
 
         try:
             # Try to extract JSON using regex
-            import re
             json_pattern = r'(\{.*\}|\[.*\])'
             match = re.search(json_pattern, response_content, re.DOTALL)
             if match:
