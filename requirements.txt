@@ -4,7 +4,9 @@ pymongo
 python-jose
 datetime
 passlib
-pydantic
+pydantic==2.6.3
+pydantic-settings==2.2.1
+pydantic_core==2.16.3
 transformers
 numpy
 gunicorn
