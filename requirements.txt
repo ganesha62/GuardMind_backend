@@ -16,3 +16,5 @@ tensorflow
 openai
 autocorrect
 typing
+google-generativeai
+jsonschema
