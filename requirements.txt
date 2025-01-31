@@ -18,3 +18,4 @@ autocorrect
 typing
 google-generativeai
 jsonschema
+dotenv
